@@ -101,7 +101,7 @@ export default function HeatmapWidget() {
 
       // round(true) snaps every tile to whole pixels. Unrounded, all edges sat on
       // fractional coordinates and were anti-aliased: the map looked blurry.
-      d3.treemap<Node>().size([width, height]).paddingInner(1).paddingTop(12).round(true)(root);
+      d3.treemap<Node>().size([width, height]).paddingInner(1).paddingTop(14).round(true)(root);
 
       const svg = d3
         .select(el)
@@ -125,7 +125,7 @@ export default function HeatmapWidget() {
         .attr("x", (d: any) => d.x0)
         .attr("y", (d: any) => d.y0)
         .attr("width", (d: any) => Math.max(0, d.x1 - d.x0 - 4))
-        .attr("height", 12);
+        .attr("height", 14);
 
       svg
         .selectAll("text.sector")
@@ -133,10 +133,11 @@ export default function HeatmapWidget() {
         .join("text")
         .attr("class", "sector")
         .attr("x", (d: any) => d.x0 + 3)
-        .attr("y", (d: any) => d.y0 + 9)
+        .attr("y", (d: any) => d.y0 + 10.5)
         .attr("clip-path", (d: any) => `url(#${sectorClipId(d.data.name)})`)
-        .attr("fill", "#808080")
-        .attr("font-size", 8)
+        .attr("fill", "#b0b0b0")
+        .attr("font-size", 9.5)
+        .attr("font-weight", 600)
         .text((d: any) => d.data.name.toUpperCase());
 
       const leaf = svg
@@ -155,24 +156,41 @@ export default function HeatmapWidget() {
         .attr("height", (d: any) => Math.max(0, d.y1 - d.y0))
         .append("title");
 
+      // Labels scale with the tile (big caps get big text) and only render when
+      // they fit. A thin dark outline (painted under the fill) keeps white text
+      // legible on bright red/green; tiny 8-9px grey labels read as "blurry".
+      const label = (d: any) => {
+        const w = d.x1 - d.x0;
+        const h = d.y1 - d.y0;
+        const size = Math.round(Math.max(10, Math.min(22, w / 4.5, h / 3)));
+        const fits = d.data.data.symbol.length * size * 0.62 + 8 <= w && size * 1.3 + 4 <= h;
+        const pctFits = 7 * size * 0.8 * 0.62 + 8 <= w && size * 2.4 + 6 <= h;
+        return { size, fits, pctFits };
+      };
+      const outline = (sel: any) =>
+        sel.attr("stroke", "rgba(0,0,0,0.45)").attr("stroke-width", 2).attr("paint-order", "stroke").attr("stroke-linejoin", "round");
+
       leaf
-        .filter((d: any) => d.x1 - d.x0 > 32 && d.y1 - d.y0 > 18)
+        .filter((d: any) => label(d).fits)
         .append("text")
-        .attr("x", 3)
-        .attr("y", 11)
+        .attr("x", 4)
+        .attr("y", (d: any) => 3 + label(d).size)
         .attr("fill", "#fff")
-        .attr("font-size", 9)
-        .attr("font-weight", "bold")
+        .attr("font-size", (d: any) => label(d).size)
+        .attr("font-weight", 700)
+        .call(outline)
         .text((d: any) => d.data.data.symbol);
 
       leaf
-        .filter((d: any) => d.x1 - d.x0 > 40 && d.y1 - d.y0 > 30)
+        .filter((d: any) => label(d).fits && label(d).pctFits)
         .append("text")
         .attr("class", "pct")
-        .attr("x", 3)
-        .attr("y", 22)
-        .attr("fill", "#ddd")
-        .attr("font-size", 8);
+        .attr("x", 4)
+        .attr("y", (d: any) => 4 + label(d).size * 2.1)
+        .attr("fill", "#f2f2f2")
+        .attr("font-size", (d: any) => Math.round(label(d).size * 0.8))
+        .attr("font-weight", 600)
+        .call(outline);
 
       paint(); // fills, tooltips and % labels come from one place
     };
