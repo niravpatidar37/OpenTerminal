@@ -37,11 +37,15 @@ export async function POST(req: NextRequest) {
     return html(FORM("Invalid token."), 401);
   }
   failures = 0;
-  const res = NextResponse.redirect(new URL("/", req.url), 303);
+  // Relative Location: req.url carries the server's internal hostname (e.g. the
+  // container id in Docker), which the browser can't reach.
+  const res = new NextResponse(null, { status: 303, headers: { location: "/" } });
   res.cookies.set(ACCESS_COOKIE, token, {
     httpOnly: true,
     sameSite: "strict",
-    secure: req.nextUrl.protocol === "https:",
+    // TLS usually terminates in front of this process, so trust the configured
+    // public origin rather than the (plain http) request this process sees.
+    secure: (process.env.PUBLIC_ORIGIN ?? "").startsWith("https:") || req.nextUrl.protocol === "https:",
     path: "/",
     maxAge: 60 * 60 * 24 * 30,
   });
