@@ -1,7 +1,8 @@
-import { Router, type Request, type Response } from "express";
+import express, { Router, type Request, type Response } from "express";
 import { z } from "zod";
 import { db } from "../db.js";
 import { SYMBOL_RE } from "../symbol.js";
+import { parseCsv, toCsv } from "../csv.js";
 
 export const portfolioRouter = Router();
 const MAX_QUANTITY = 1e9;
@@ -206,5 +207,90 @@ portfolioRouter.get(
   "/:id/positions",
   withPortfolio((_req, res, id) => {
     res.json(computePositions(loadTxs(id)).positions);
+  })
+);
+
+// ---- CSV export / import ----------------------------------------------------
+
+export const CSV_COLUMNS = ["symbol", "side", "quantity", "price", "executed_at"] as const;
+export const MAX_IMPORT_ROWS = 5_000;
+
+portfolioRouter.get(
+  "/:id/export.csv",
+  withPortfolio((_req, res, id) => {
+    const rows = db
+      .prepare("SELECT symbol, side, quantity, price, executed_at FROM transactions WHERE portfolio_id = ? ORDER BY executed_at, id")
+      .all(id) as Array<Record<(typeof CSV_COLUMNS)[number], unknown>>;
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="portfolio-${id}.csv"`);
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.send(toCsv([...CSV_COLUMNS], rows.map((r) => CSV_COLUMNS.map((c) => r[c]))));
+  })
+);
+
+/**
+ * Appends transactions from a CSV body (Content-Type: text/csv) with a header
+ * row naming the CSV_COLUMNS in any order. All-or-nothing: every row is
+ * validated with the same schema as a single POST, then inserted in one
+ * transaction and rolled back if the resulting history would oversell.
+ */
+portfolioRouter.post(
+  "/:id/import",
+  express.text({ type: "text/csv", limit: "512kb" }),
+  withPortfolio((req, res, id) => {
+    if (typeof req.body !== "string" || !req.body.trim()) {
+      return res.status(400).json({ error: "send the CSV as the request body with Content-Type: text/csv" });
+    }
+    let table: string[][];
+    try {
+      table = parseCsv(req.body);
+    } catch (err) {
+      return res.status(400).json({ error: `unreadable CSV: ${(err as Error).message}` });
+    }
+    const [header = [], ...data] = table;
+    const index = CSV_COLUMNS.map((c) => header.findIndex((h) => h.trim().toLowerCase() === c));
+    const missing = CSV_COLUMNS.filter((_c, i) => index[i] < 0);
+    if (missing.length) return res.status(400).json({ error: `missing column(s): ${missing.join(", ")}` });
+    if (data.length === 0) return res.status(400).json({ error: "no rows to import" });
+    if (data.length > MAX_IMPORT_ROWS) return res.status(400).json({ error: `at most ${MAX_IMPORT_ROWS} rows per import` });
+
+    const errors: Array<{ line: number; message: string }> = [];
+    const parsed: Array<z.infer<typeof txSchema>> = [];
+    data.forEach((cells, i) => {
+      const at = (c: number) => (cells[index[c]] ?? "").trim();
+      const num = (c: number) => (at(c) === "" ? NaN : Number(at(c)));
+      const r = txSchema.safeParse({
+        symbol: at(0),
+        side: at(1).toUpperCase(),
+        quantity: num(2),
+        price: num(3),
+        executed_at: at(4),
+      });
+      if (r.success) parsed.push(r.data);
+      else if (errors.length < 20) {
+        errors.push({ line: i + 2, message: r.error.issues.map((x) => `${x.path.join(".")}: ${x.message}`).join("; ") });
+      }
+    });
+    if (errors.length) return res.status(400).json({ error: "invalid rows; nothing was imported", errors });
+
+    const insert = db.prepare(
+      "INSERT INTO transactions (portfolio_id, symbol, side, quantity, price, executed_at) VALUES (?, ?, ?, ?, ?, ?)"
+    );
+    const run = db.transaction(() => {
+      for (const t of parsed) insert.run(id, t.symbol, t.side, t.quantity, t.price, t.executed_at);
+      const touched = new Set(parsed.map((t) => t.symbol));
+      const { oversold } = computePositions(loadTxs(id).filter((x) => touched.has(x.symbol)));
+      if (oversold.length) throw Object.assign(new OversoldError(), { symbols: oversold });
+    });
+    try {
+      run();
+    } catch (err) {
+      if (err instanceof OversoldError) {
+        const symbols = (err as OversoldError & { symbols: string[] }).symbols;
+        return res.status(409).json({ error: `import would sell more than held for: ${symbols.join(", ")}; nothing was imported` });
+      }
+      throw err;
+    }
+    res.status(201).json({ imported: parsed.length });
   })
 );
