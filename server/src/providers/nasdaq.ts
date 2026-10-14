@@ -151,6 +151,54 @@ export async function history(symbol: string, rangeKey: string): Promise<Candle[
   return candles;
 }
 
+/** Regular US session, in minutes after midnight ET. */
+const SESSION_OPEN_MIN = 9 * 60 + 30;
+const SESSION_CLOSE_MIN = 16 * 60;
+
+/**
+ * Folds Nasdaq's per-minute intraday points into OHLC candles of `bucketMin`
+ * minutes, regular session only. Nasdaq encodes ET wall-clock time in `x` as
+ * if it were UTC (an 11:39 AM ET point has x = 11:39Z), the same convention
+ * its daily chart uses, so UTC getters yield the ET session time.
+ */
+export function minutePointsToCandles(points: Array<{ x: number; y: number; w?: number }>, bucketMin = 5): Candle[] {
+  const bucketSec = bucketMin * 60;
+  const candles: Candle[] = [];
+  for (const p of points) {
+    if (!Number.isFinite(p?.x) || !Number.isFinite(p?.y)) continue;
+    const d = new Date(p.x);
+    const minuteOfDay = d.getUTCHours() * 60 + d.getUTCMinutes();
+    if (minuteOfDay < SESSION_OPEN_MIN || minuteOfDay >= SESSION_CLOSE_MIN) continue;
+    const time = Math.floor(p.x / 1000 / bucketSec) * bucketSec;
+    const volume = Number.isFinite(p.w) ? Math.round(p.w as number) : 0;
+    const last = candles[candles.length - 1];
+    if (last && last.time === time) {
+      last.high = Math.max(last.high, p.y);
+      last.low = Math.min(last.low, p.y);
+      last.close = p.y;
+      last.volume += volume;
+    } else {
+      candles.push({ time, open: p.y, high: p.y, low: p.y, close: p.y, volume });
+    }
+  }
+  return candles;
+}
+
+/**
+ * Today's session as 5-minute candles, current to the latest minute. Throws
+ * when there's nothing in-session yet (pre-market, holidays) so callers fall
+ * back to the daily chart instead of rendering an empty one.
+ */
+export async function intraday(symbol: string, bucketMin = 5): Promise<Candle[]> {
+  const assetclass = await resolveAssetClass(symbol);
+  const data = await nfetch(
+    `https://api.nasdaq.com/api/quote/${encodeURIComponent(symbol)}/chart?assetclass=${assetclass}&charttype=rs`
+  );
+  const candles = minutePointsToCandles(data.chart ?? [], bucketMin);
+  if (candles.length === 0) throw new Error(`nasdaq: no in-session intraday data for ${symbol}`);
+  return candles;
+}
+
 export type NasdaqOptionRow = {
   strike: number | null;
   lastPrice: number | null;

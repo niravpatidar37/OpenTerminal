@@ -28,6 +28,7 @@ marketRouter.param("symbol", (req, res, next, raw) => {
 
 const QUOTE_TTL = 1_000;
 const HISTORY_TTL = 20_000;
+const INTRADAY_TTL = 5_000;
 const NEWS_TTL = 60_000;
 // Same set the chart offers (web/components/widgets/ChartWidget.tsx).
 const HISTORY_RANGES = new Set(["1D", "5D", "1M", "6M", "YTD", "1Y", "5Y", "MAX"]);
@@ -250,12 +251,20 @@ marketRouter.get("/history/:symbol", async (req, res) => {
   // values bypassed the cache and forced a fresh upstream fan-out each time.
   if (!HISTORY_RANGES.has(rangeKey)) return res.status(400).json({ error: "unsupported range" });
   try {
-    const data = await cached(`history:${symbol}:${rangeKey}`, HISTORY_TTL, () =>
+    // 1D is the live view (the chart polls it every 8s), so it gets a short TTL.
+    const ttl = rangeKey === "1D" ? INTRADAY_TTL : HISTORY_TTL;
+    const data = await cached(`history:${symbol}:${rangeKey}`, ttl, () =>
       binance.CRYPTO_SYMBOLS.has(symbol)
         ? binance.history(symbol, rangeKey)
         : isVix(symbol)
         ? vixHistory(rangeKey)
         : withFallback([
+            // 1D = today's session at 5-minute resolution. Previously Nasdaq's
+            // daily chart answered first, so "1D" showed a few daily bars with
+            // no candle for the session in progress.
+            ...(rangeKey === "1D"
+              ? ([["nasdaq-intraday", () => nasdaq.intraday(symbol)]] as Array<[string, () => Promise<yahoo.Candle[]>]>)
+              : []),
             ["nasdaq", () => nasdaq.history(symbol, rangeKey)],
             ["yahoo", () => yahoo.history(symbol, yahooRange(rangeKey).range, yahooRange(rangeKey).interval)],
             ["stooq", () => stooq.history(symbol)],
