@@ -13,12 +13,24 @@ import * as news from "../providers/news.js";
 import * as econcalendar from "../providers/econcalendar.js";
 import * as finra from "../providers/finra.js";
 import * as secedgar from "../providers/secedgar.js";
+import { normalizeSymbol } from "../symbol.js";
 
 export const marketRouter = Router();
+
+// Every /:symbol route: reject non-ticker input with 400 before it reaches a
+// provider URL or a cache key, and hand handlers the normalized form.
+marketRouter.param("symbol", (req, res, next, raw) => {
+  const symbol = normalizeSymbol(raw);
+  if (!symbol) return res.status(400).json({ error: "invalid symbol" });
+  req.params.symbol = symbol;
+  next();
+});
 
 const QUOTE_TTL = 1_000;
 const HISTORY_TTL = 20_000;
 const NEWS_TTL = 60_000;
+// Same set the chart offers (web/components/widgets/ChartWidget.tsx).
+const HISTORY_RANGES = new Set(["1D", "5D", "1M", "6M", "YTD", "1Y", "5Y", "MAX"]);
 
 function fail(req: any, res: any, err: unknown) {
   const detail = err instanceof Error ? err.message : String(err);
@@ -210,12 +222,16 @@ async function getQuotes(symbols: string[]): Promise<yahoo.Quote[]> {
 }
 
 marketRouter.get("/quotes", async (req, res) => {
-  const symbols = String(req.query.symbols ?? "")
+  const raw = String(req.query.symbols ?? "")
     .split(",")
-    .map((s) => s.trim().toUpperCase())
+    .map((s) => s.trim())
     .filter(Boolean)
     .slice(0, 150);
-  if (symbols.length === 0) return res.status(400).json({ error: "symbols required" });
+  const symbols = [...new Set(raw.map(normalizeSymbol))].filter((s): s is string => s !== null);
+  if (raw.length === 0) return res.status(400).json({ error: "symbols required" });
+  if (symbols.length !== new Set(raw.map((s) => s.toUpperCase())).size) {
+    return res.status(400).json({ error: "invalid symbol in list" });
+  }
   try {
     const data = await getQuotes(symbols);
     if (data.length === 0) throw new Error("no quotes from any provider");
@@ -230,6 +246,9 @@ marketRouter.get("/quotes", async (req, res) => {
 marketRouter.get("/history/:symbol", async (req, res) => {
   const symbol = req.params.symbol.toUpperCase();
   const rangeKey = String(req.query.range ?? "6M");
+  // Allowlisted: every distinct string was a distinct cache key, so arbitrary
+  // values bypassed the cache and forced a fresh upstream fan-out each time.
+  if (!HISTORY_RANGES.has(rangeKey)) return res.status(400).json({ error: "unsupported range" });
   try {
     const data = await cached(`history:${symbol}:${rangeKey}`, HISTORY_TTL, () =>
       binance.CRYPTO_SYMBOLS.has(symbol)
@@ -284,7 +303,8 @@ marketRouter.get("/search", async (req, res) => {
 // ---- news ----
 
 marketRouter.get("/news", async (req, res) => {
-  const symbol = req.query.symbol ? String(req.query.symbol).toUpperCase() : null;
+  const symbol = req.query.symbol === undefined ? null : normalizeSymbol(req.query.symbol);
+  if (req.query.symbol !== undefined && !symbol) return res.status(400).json({ error: "invalid symbol" });
   try {
     const data = await cached(`news:${symbol ?? "top"}`, NEWS_TTL, async () => {
       if (symbol) {
@@ -323,6 +343,10 @@ marketRouter.get("/econ-calendar", async (req, res) => {
 marketRouter.get("/options/:symbol", async (req, res) => {
   const symbol = req.params.symbol.toUpperCase();
   const expiry = req.query.expiry ? String(req.query.expiry) : undefined;
+  // Expiry labels are short dates; bound the shape so it can't mint unbounded cache keys.
+  if (expiry !== undefined && !/^[A-Za-z0-9 ,.\-]{1,24}$/.test(expiry)) {
+    return res.status(400).json({ error: "invalid expiry" });
+  }
   try {
     const data = await cached(`options:${symbol}:${expiry ?? "front"}`, 60_000, () =>
       withFallback([
@@ -553,10 +577,20 @@ marketRouter.get("/heatmap", async (req, res) => {
   }
 });
 
+// Columns the screener can sort by. Anything else (e.g. "__proto__",
+// "constructor") is rejected rather than used as a property lookup.
+const SCREENER_SORT_KEYS = new Set(["symbol", "name", "price", "changePercent", "volume", "marketCap", "sector"]);
+
 marketRouter.get("/screener", async (req, res) => {
+  const sortKey = String(req.query.sort ?? "marketCap");
+  if (!SCREENER_SORT_KEYS.has(sortKey)) return res.status(400).json({ error: "unsupported sort column" });
+  const num = (v: unknown) => (v === undefined ? undefined : Number(v));
+  for (const k of ["marketCapMin", "changeMin", "changeMax", "volumeMin"]) {
+    const v = num(req.query[k]);
+    if (v !== undefined && !Number.isFinite(v)) return res.status(400).json({ error: `${k} must be a number` });
+  }
   try {
     let rows = await marketRows(marketParam(req));
-    const num = (v: unknown) => (v === undefined ? undefined : Number(v));
     const f = {
       sector: req.query.sector ? String(req.query.sector) : undefined,
       marketCapMin: num(req.query.marketCapMin),
@@ -572,11 +606,11 @@ marketRouter.get("/screener", async (req, res) => {
       if (f.volumeMin !== undefined && (r.volume ?? 0) < f.volumeMin) return false;
       return true;
     });
-    const sortKey = String(req.query.sort ?? "marketCap") as keyof tradingview.MarketRow;
+    const key = sortKey as keyof tradingview.MarketRow;
     const dir = req.query.dir === "asc" ? 1 : -1;
     rows = [...rows].sort((a, b) => {
-      const av = (a[sortKey] as number | null) ?? -Infinity;
-      const bv = (b[sortKey] as number | null) ?? -Infinity;
+      const av = (a[key] as number | null) ?? -Infinity;
+      const bv = (b[key] as number | null) ?? -Infinity;
       return (av < bv ? -1 : av > bv ? 1 : 0) * dir;
     });
     res.json(rows.slice(0, 500));
