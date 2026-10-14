@@ -57,6 +57,9 @@ async function proxy(req: NextRequest, path: string[]): Promise<NextResponse> {
 
   const hasBody = req.method !== "GET" && req.method !== "HEAD" && req.method !== "DELETE";
 
+  // Live streams have no deadline; they end when the browser disconnects
+  // (req.signal), which also closes the upstream connection to the API.
+  const streaming = path[0] === "stream";
   let upstream: Response;
   try {
     upstream = await fetch(url, {
@@ -64,7 +67,7 @@ async function proxy(req: NextRequest, path: string[]): Promise<NextResponse> {
       headers,
       body: hasBody ? await req.text() : undefined,
       cache: "no-store",
-      signal: AbortSignal.timeout(path[0] === "ai" ? TIMEOUT_MS.ai : TIMEOUT_MS.default),
+      signal: streaming ? req.signal : AbortSignal.timeout(path[0] === "ai" ? TIMEOUT_MS.ai : TIMEOUT_MS.default),
     });
   } catch (err) {
     const timedOut = err instanceof Error && err.name === "TimeoutError";
@@ -78,6 +81,11 @@ async function proxy(req: NextRequest, path: string[]): Promise<NextResponse> {
     if (v) out.set(h, v);
   }
   if (!out.has("content-type")) out.set("content-type", "application/json");
+  if (streaming && upstream.ok && upstream.body) {
+    out.set("cache-control", "no-cache, no-transform");
+    out.set("x-accel-buffering", "no");
+    return new NextResponse(upstream.body, { status: upstream.status, headers: out });
+  }
   const body = upstream.status === 204 ? null : await upstream.arrayBuffer();
   return new NextResponse(body, { status: upstream.status, headers: out });
 }

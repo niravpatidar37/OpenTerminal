@@ -125,7 +125,7 @@ async function vixHistory(rangeKey: string): Promise<yahoo.Candle[]> {
  * per-IP rate limit (see index.ts).
  */
 const FALLBACK_PER_SYMBOL_CAP = 20;
-async function getQuotes(symbols: string[]): Promise<yahoo.Quote[]> {
+export async function getQuotes(symbols: string[]): Promise<yahoo.Quote[]> {
   const fresh = new Map<string, yahoo.Quote>();
   const missing: string[] = [];
   for (const sym of symbols) {
@@ -391,15 +391,19 @@ marketRouter.get("/options/:symbol", async (req, res) => {
 
 // ---- crypto ----
 
+/** Top-50 crypto board (shared by GET /crypto and the live stream). */
+export function cryptoBoard() {
+  return cached("crypto:markets", 5_000, () =>
+    withFallback([
+      ["coingecko", () => coingecko.markets(50)],
+      ["binance", () => binance.markets()],
+    ])
+  );
+}
+
 marketRouter.get("/crypto", async (req, res) => {
   try {
-    const data = await cached("crypto:markets", 5_000, () =>
-      withFallback([
-        ["coingecko", () => coingecko.markets(50)],
-        ["binance", () => binance.markets()],
-      ])
-    );
-    res.json(data);
+    res.json(await cryptoBoard());
   } catch (err) {
     fail(req, res, err);
   }
@@ -477,63 +481,67 @@ const EU_INDEX_PROXIES: Record<string, string> = {
   EWI: "Italy (EWI)",
 };
 
-marketRouter.get("/macro", async (req, res) => {
-  try {
-    if (req.query.region === "eu") {
-      const [yieldResults, policyRate, inflation, quotes] = await Promise.all([
-        Promise.allSettled(
-          EU_YIELD_SERIES.map((s) => cached(`ecb:${s.key}`, 300_000, () => ecb.latest(s.flowRef, s.key)))
-        ),
-        cached(`ecb:${EU_POLICY_RATE.key}`, 300_000, () => ecb.latest(EU_POLICY_RATE.flowRef, EU_POLICY_RATE.key)).catch(
-          () => null
-        ),
-        cached(`ecb:${EU_INFLATION.key}`, 300_000, () => ecb.latest(EU_INFLATION.flowRef, EU_INFLATION.key)).catch(
-          () => null
-        ),
-        getQuotes(Object.keys(EU_INDEX_PROXIES)),
-      ]);
-      const yields = EU_YIELD_SERIES.map((s, i) => {
-        const r = yieldResults[i];
-        return { tenor: s.tenor, value: r.status === "fulfilled" ? r.value?.value ?? null : null };
-      }).filter((y) => y.value !== null);
-
-      const indexes = quotes.map((q) => ({
-        symbol: q.symbol,
-        label: EU_INDEX_PROXIES[q.symbol] ?? q.symbol,
-        price: q.price,
-        changePercent: q.changePercent,
-      }));
-
-      if (yields.length === 0 && indexes.length === 0) throw new Error("no EU macro data from any provider");
-      res.json({
-        yields,
-        vix: null,
-        indexes,
-        policyRate: policyRate?.value ?? null,
-        inflation: inflation?.value ?? null,
-      });
-      return;
-    }
-
-    const [yieldResults, vix, quotes] = await Promise.all([
-      Promise.allSettled(YIELD_SERIES.map((s) => cached(`fred:${s.id}`, 300_000, () => fred.latest(s.id)))),
-      cached("fred:VIXCLS", 300_000, () => fred.latest("VIXCLS")).catch(() => null),
-      getQuotes(Object.keys(INDEX_PROXIES)),
+/** US or EU macro snapshot (shared by GET /macro and the live stream). */
+export async function macroData(region: "us" | "eu") {
+  if (region === "eu") {
+    const [yieldResults, policyRate, inflation, quotes] = await Promise.all([
+      Promise.allSettled(
+        EU_YIELD_SERIES.map((s) => cached(`ecb:${s.key}`, 300_000, () => ecb.latest(s.flowRef, s.key)))
+      ),
+      cached(`ecb:${EU_POLICY_RATE.key}`, 300_000, () => ecb.latest(EU_POLICY_RATE.flowRef, EU_POLICY_RATE.key)).catch(
+        () => null
+      ),
+      cached(`ecb:${EU_INFLATION.key}`, 300_000, () => ecb.latest(EU_INFLATION.flowRef, EU_INFLATION.key)).catch(
+        () => null
+      ),
+      getQuotes(Object.keys(EU_INDEX_PROXIES)),
     ]);
-    const yields = YIELD_SERIES.map((s, i) => {
+    const yields = EU_YIELD_SERIES.map((s, i) => {
       const r = yieldResults[i];
       return { tenor: s.tenor, value: r.status === "fulfilled" ? r.value?.value ?? null : null };
     }).filter((y) => y.value !== null);
 
     const indexes = quotes.map((q) => ({
       symbol: q.symbol,
-      label: INDEX_PROXIES[q.symbol] ?? q.symbol,
+      label: EU_INDEX_PROXIES[q.symbol] ?? q.symbol,
       price: q.price,
       changePercent: q.changePercent,
     }));
 
-    if (yields.length === 0 && indexes.length === 0) throw new Error("no macro data from any provider");
-    res.json({ yields, vix: vix?.value ?? null, indexes, policyRate: null, inflation: null });
+    if (yields.length === 0 && indexes.length === 0) throw new Error("no EU macro data from any provider");
+    return {
+      yields,
+      vix: null,
+      indexes,
+      policyRate: policyRate?.value ?? null,
+      inflation: inflation?.value ?? null,
+    };
+  }
+
+  const [yieldResults, vix, quotes] = await Promise.all([
+    Promise.allSettled(YIELD_SERIES.map((s) => cached(`fred:${s.id}`, 300_000, () => fred.latest(s.id)))),
+    cached("fred:VIXCLS", 300_000, () => fred.latest("VIXCLS")).catch(() => null),
+    getQuotes(Object.keys(INDEX_PROXIES)),
+  ]);
+  const yields = YIELD_SERIES.map((s, i) => {
+    const r = yieldResults[i];
+    return { tenor: s.tenor, value: r.status === "fulfilled" ? r.value?.value ?? null : null };
+  }).filter((y) => y.value !== null);
+
+  const indexes = quotes.map((q) => ({
+    symbol: q.symbol,
+    label: INDEX_PROXIES[q.symbol] ?? q.symbol,
+    price: q.price,
+    changePercent: q.changePercent,
+  }));
+
+  if (yields.length === 0 && indexes.length === 0) throw new Error("no macro data from any provider");
+  return { yields, vix: vix?.value ?? null, indexes, policyRate: null, inflation: null };
+}
+
+marketRouter.get("/macro", async (req, res) => {
+  try {
+    res.json(await macroData(req.query.region === "eu" ? "eu" : "us"));
   } catch (err) {
     fail(req, res, err);
   }

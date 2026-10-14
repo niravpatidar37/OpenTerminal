@@ -1,6 +1,7 @@
 import express, { type NextFunction, type Request, type Response } from "express";
 import cors from "cors";
-import { marketRouter } from "./routes/market.js";
+import { cryptoBoard, getQuotes, macroData, marketRouter } from "./routes/market.js";
+import { createStreamRouter } from "./routes/stream.js";
 import { portfolioRouter } from "./routes/portfolio.js";
 import { aiRouter } from "./routes/ai.js";
 import { allStats } from "./providers/registry.js";
@@ -64,11 +65,11 @@ export function createApp() {
   // default must sit above the UI's own steady-state polling: several widgets
   // refresh every second, and behind the bundled proxy one browser is one IP,
   // so 240/min was exhausted by a single tab with the crypto widget added.
-  app.use(
-    "/api",
-    rateLimit({ windowMs: 60_000, max: perMinute("MARKET_RATE_LIMIT_PER_MIN", 600) }),
-    marketRouter
-  );
+  const marketLimit = rateLimit({ windowMs: 60_000, max: perMinute("MARKET_RATE_LIMIT_PER_MIN", 600) });
+  // Live push for the 1-second widgets. Same budget as the REST routes, but a
+  // stream costs one request per connection instead of one per second.
+  app.use("/api/stream", marketLimit, createStreamRouter({ quotes: getQuotes, macro: macroData, crypto: cryptoBoard }));
+  app.use("/api", marketLimit, marketRouter);
 
   app.use("/api", (_req, res) => {
     res.status(404).json({ error: "not found" });

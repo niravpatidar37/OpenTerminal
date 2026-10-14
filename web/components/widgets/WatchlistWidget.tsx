@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { apiGet, fmt, fmtBig, pctClass, type Quote } from "../../lib/api";
+import { pollUnlessLive, useLiveQuotes } from "../../lib/live";
 import { normalizeSymbol, symbolsParam } from "../../lib/symbol";
 import { useTerminal } from "../../store/terminal";
 import Flash from "../Flash";
@@ -15,12 +16,16 @@ export default function WatchlistWidget() {
   const [input, setInput] = useState("");
   const [invalid, setInvalid] = useState(false);
 
-  const { data = [] } = useQuery({
+  const live = useLiveQuotes(watchlist);
+  const { data: polled = [] } = useQuery({
     queryKey: ["watchlist", watchlist.join(",")],
     queryFn: () => apiGet<Quote[]>(`/api/quotes?symbols=${symbolsParam(watchlist)}`),
     enabled: watchlist.length > 0,
-    refetchInterval: 1_000,
+    refetchInterval: pollUnlessLive(live.connected),
   });
+  // Live values win per symbol; anything the stream hasn't sent yet keeps its polled value.
+  const bySymbol = new Map(polled.map((q) => [q.symbol, q]));
+  const data = watchlist.map((s) => live.quotes.get(s) ?? bySymbol.get(s)).filter((q): q is Quote => !!q);
 
   return (
     <div>
