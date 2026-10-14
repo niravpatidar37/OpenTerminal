@@ -8,8 +8,9 @@ import { ACCESS_COOKIE, accessToken, isAllowedHost, isSameOriginWrite, tokenMatc
 const API_URL = process.env.API_URL ?? "http://localhost:4000";
 // AI answers can take a while; everything else is a cached market lookup.
 const TIMEOUT_MS = { ai: 120_000, default: 30_000 };
-// Upstream response headers worth relaying (Retry-After lets the UI back off on 429).
-const PASS_HEADERS = ["content-type", "retry-after", "cache-control"];
+// Upstream response headers worth relaying (Retry-After lets the UI back off on 429;
+// Content-Disposition names CSV downloads). An allowlist, so internal headers never leak.
+const PASS_HEADERS = ["content-type", "retry-after", "cache-control", "content-disposition", "x-content-type-options"];
 
 const deny = (status: number, error: string) => NextResponse.json({ error }, { status });
 
