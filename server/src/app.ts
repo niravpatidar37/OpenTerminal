@@ -2,6 +2,7 @@ import express, { type NextFunction, type Request, type Response } from "express
 import cors from "cors";
 import { cryptoBoard, getQuotes, macroData, marketRouter } from "./routes/market.js";
 import { createStreamRouter } from "./routes/stream.js";
+import { alertsRouter } from "./alerts.js";
 import { portfolioRouter } from "./routes/portfolio.js";
 import { aiRouter } from "./routes/ai.js";
 import { allStats } from "./providers/registry.js";
@@ -52,6 +53,8 @@ export function createApp() {
   // app.use("/api", limiter, marketRouter) ran first for every /api path, so
   // portfolio and AI traffic silently drained the market budget too.
   app.use("/api/portfolios", requireApiKey, portfolioRouter);
+  // Alerts are private like portfolios: same shared-secret gate.
+  app.use("/api/alerts", requireApiKey, alertsRouter);
   app.use(
     "/api/ai",
     requireApiKey,
