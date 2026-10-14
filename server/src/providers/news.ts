@@ -1,4 +1,5 @@
 import { XMLParser } from "fast-xml-parser";
+import { httpFetch } from "../http.js";
 
 export type NewsItem = {
   title: string;
@@ -20,7 +21,7 @@ export function toIsoOrNull(value: unknown): string | null {
 }
 
 async function fetchRss(url: string, publisher: string, symbol: string | null): Promise<NewsItem[]> {
-  const res = await fetch(url, { headers: { "User-Agent": UA } });
+  const res = await httpFetch(url, { headers: { "User-Agent": UA } });
   if (!res.ok) throw new Error(`rss ${res.status} ${url}`);
   const xml = await res.text();
   const doc = parser.parse(xml);

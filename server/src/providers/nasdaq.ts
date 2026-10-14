@@ -1,4 +1,5 @@
 import type { Quote, Candle } from "./yahoo.js";
+import { httpFetch } from "../http.js";
 
 const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36";
 const HEADERS = { "User-Agent": UA, Accept: "application/json", Origin: "https://www.nasdaq.com", Referer: "https://www.nasdaq.com/" };
@@ -21,7 +22,7 @@ function release(): void {
 async function nfetch(url: string): Promise<any> {
   await acquire();
   try {
-    const res = await fetch(url, { headers: HEADERS });
+    const res = await httpFetch(url, { headers: HEADERS });
     if (!res.ok) throw new Error(`nasdaq ${res.status} for ${url}`);
     const json = await res.json();
     if (!json?.data) throw new Error(`nasdaq: no data in response for ${url}`);
