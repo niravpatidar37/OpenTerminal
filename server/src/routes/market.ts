@@ -15,6 +15,7 @@ import * as finra from "../providers/finra.js";
 import * as secedgar from "../providers/secedgar.js";
 import { normalizeSymbol } from "../symbol.js";
 import { mergeLiveCandle } from "../livecandle.js";
+import { parseExpiry, withGreeks } from "../greeks.js";
 
 export const marketRouter = Router();
 
@@ -383,11 +384,29 @@ marketRouter.get("/options/:symbol", async (req, res) => {
         ],
       ])
     );
-    res.json(data);
+    // Greeks are computed per request (not cached) so time-to-expiry stays current.
+    const r = await riskFreeRate();
+    const exp = data.selectedDate ? parseExpiry(data.selectedDate) : null;
+    res.json({
+      ...data,
+      riskFreeRate: r,
+      calls: withGreeks(data.calls, "call", data.underlyingPrice, exp, r),
+      puts: withGreeks(data.puts, "put", data.underlyingPrice, exp, r),
+    });
   } catch (err) {
     fail(req, res, err);
   }
 });
+
+/** 3-month T-bill yield (FRED DGS3MO) as a decimal; 4% if FRED is unavailable. */
+async function riskFreeRate(): Promise<number> {
+  try {
+    const v = (await cached("fred:DGS3MO", 300_000, () => fred.latest("DGS3MO")))?.value;
+    return typeof v === "number" && Number.isFinite(v) && v > -5 && v < 25 ? v / 100 : 0.04;
+  } catch {
+    return 0.04;
+  }
+}
 
 // ---- crypto ----
 
