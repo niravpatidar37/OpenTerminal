@@ -14,6 +14,7 @@ import * as econcalendar from "../providers/econcalendar.js";
 import * as finra from "../providers/finra.js";
 import * as secedgar from "../providers/secedgar.js";
 import { normalizeSymbol } from "../symbol.js";
+import { mergeLiveCandle } from "../livecandle.js";
 
 export const marketRouter = Router();
 
@@ -271,6 +272,12 @@ marketRouter.get("/history/:symbol", async (req, res) => {
           ])
     );
     if (!Array.isArray(data) || data.length === 0) throw new Error("empty history from all providers");
+    // Daily ranges end at the last completed session; add today's in-progress
+    // candle from the live quote (1s cache). Crypto/VIX and 1D already cover today.
+    if (rangeKey !== "1D" && !binance.CRYPTO_SYMBOLS.has(symbol) && !isVix(symbol)) {
+      const [q] = await getQuotes([symbol]).catch(() => []);
+      if (q) return res.json(mergeLiveCandle(data, q));
+    }
     res.json(data);
   } catch (err) {
     fail(req, res, err);
