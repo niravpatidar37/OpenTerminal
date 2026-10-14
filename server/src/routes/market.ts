@@ -16,6 +16,9 @@ import * as secedgar from "../providers/secedgar.js";
 import { normalizeSymbol } from "../symbol.js";
 import { mergeLiveCandle } from "../livecandle.js";
 import { parseExpiry, withGreeks } from "../greeks.js";
+import { BENCHMARK, SECTOR_ETFS, completedSessions, periodReturns, relativeStrength } from "../sectorStrength.js";
+import { etSessionDay } from "../livecandle.js";
+import { mapWithConcurrency } from "../concurrency.js";
 
 export const marketRouter = Router();
 
@@ -657,6 +660,41 @@ marketRouter.get("/screener", async (req, res) => {
       return (av < bv ? -1 : av > bv ? 1 : 0) * dir;
     });
     res.json(rows.slice(0, 500));
+  } catch (err) {
+    fail(req, res, err);
+  }
+});
+
+// ---- sector relative strength (SPDR sector ETFs vs SPY) ----
+
+/** 6M of daily history for one ETF; changes once a day, so cached for 10 minutes. */
+function sectorHistory(symbol: string) {
+  return cached(`sector-hist:${symbol}`, 600_000, () =>
+    withFallback([
+      ["nasdaq", () => nasdaq.history(symbol, "6M")],
+      ["yahoo", () => yahoo.history(symbol, "6mo", "1d")],
+    ])
+  );
+}
+
+marketRouter.get("/sector-strength", async (req, res) => {
+  try {
+    const symbols = [BENCHMARK, ...Object.keys(SECTOR_ETFS)];
+    const [quotes, histories] = await Promise.all([
+      getQuotes(symbols),
+      // Polite to the provider: at most 4 history fetches in flight.
+      mapWithConcurrency(symbols, 4, (s) => sectorHistory(s).catch(() => [])),
+    ]);
+    const price = new Map(quotes.map((q) => [q.symbol, q.price]));
+    const today = etSessionDay().time;
+    const returnsOf = (i: number) => periodReturns(completedSessions(histories[i], today), price.get(symbols[i]) ?? null);
+    const bench = returnsOf(0);
+    const sectors = symbols.slice(1).map((symbol, k) => {
+      const returns = returnsOf(k + 1);
+      return { symbol, name: SECTOR_ETFS[symbol], returns, rs: relativeStrength(returns, bench) };
+    });
+    if (sectors.every((x) => x.returns.d1 === null && x.returns.m1 === null)) throw new Error("no sector data from any provider");
+    res.json({ benchmark: { symbol: BENCHMARK, returns: bench }, sectors, asOf: new Date().toISOString() });
   } catch (err) {
     fail(req, res, err);
   }

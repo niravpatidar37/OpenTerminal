@@ -8,6 +8,57 @@ import { normalizeSymbol, symbolsParam } from "../../lib/symbol";
 import { useTerminal } from "../../store/terminal";
 import Flash from "../Flash";
 
+/** Named watchlist groups as tabs: click to switch, double-click to rename. */
+function GroupTabs() {
+  const groups = useTerminal((s) => s.watchlists);
+  const active = useTerminal((s) => s.activeWatchlist);
+  const setActive = useTerminal((s) => s.setActiveWatchlist);
+  const add = useTerminal((s) => s.addWatchlistGroup);
+  const rename = useTerminal((s) => s.renameWatchlistGroup);
+  const remove = useTerminal((s) => s.removeWatchlistGroup);
+  return (
+    <div className="flex gap-1 px-1 pt-1 flex-wrap items-center" role="tablist">
+      {groups.map((g, i) => (
+        <span key={i} className={`term-btn flex items-center gap-1 ${i === active ? "active" : ""}`}>
+          <button
+            role="tab"
+            aria-selected={i === active}
+            onClick={() => setActive(i)}
+            onDoubleClick={() => {
+              const name = window.prompt("Rename watchlist", g.name);
+              if (name !== null) rename(i, name);
+            }}
+            title="Double-click to rename"
+          >
+            {g.name} <span className="dim">{g.symbols.length}</span>
+          </button>
+          {groups.length > 1 && i === active && (
+            <button
+              className="dim hover:text-[var(--down)]"
+              aria-label={`delete ${g.name}`}
+              onClick={() => {
+                if (window.confirm(`Delete watchlist "${g.name}"?`)) remove(i);
+              }}
+            >
+              ×
+            </button>
+          )}
+        </span>
+      ))}
+      <button
+        className="term-btn"
+        aria-label="new watchlist"
+        onClick={() => {
+          const name = window.prompt("New watchlist name");
+          if (name !== null) add(name);
+        }}
+      >
+        +
+      </button>
+    </div>
+  );
+}
+
 export default function WatchlistWidget() {
   const watchlist = useTerminal((s) => s.watchlist);
   const addToWatchlist = useTerminal((s) => s.addToWatchlist);
@@ -29,6 +80,7 @@ export default function WatchlistWidget() {
 
   return (
     <div>
+      <GroupTabs />
       <form
         className="flex gap-1 p-1"
         onSubmit={(e) => {
