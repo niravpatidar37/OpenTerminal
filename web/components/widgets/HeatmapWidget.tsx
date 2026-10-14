@@ -54,11 +54,38 @@ export default function HeatmapWidget() {
     const cells = [...snapshot.cells.values()];
     const caps = snapshot.caps;
 
+    const color = (chg: number) => {
+      const clamped = Math.max(-3, Math.min(3, chg));
+      return clamped >= 0
+        ? d3.interpolateRgb("#1a1a1a", "#00c853")(clamped / 3)
+        : d3.interpolateRgb("#1a1a1a", "#ff3d3d")(-clamped / 3);
+    };
+    const pct = (chg: number) => `${chg >= 0 ? "+" : ""}${chg.toFixed(2)}%`;
+
+    /** Polls only change colours and labels: update the existing tiles in place.
+     * Rebuilding the whole SVG every 3s made the map flash even when no tile moved. */
+    const paint = () => {
+      d3.select(el)
+        .selectAll<SVGGElement, unknown>("g.leaf")
+        .each(function (this: SVGGElement) {
+          const cell = snapshot!.cells.get(this.dataset.symbol ?? "");
+          if (!cell || cell.changePercent === null) return;
+          const g = d3.select(this);
+          g.select("rect").attr("fill", color(cell.changePercent));
+          g.select("title").text(`${cell.symbol} ${cell.name ?? ""}: ${cell.changePercent.toFixed(2)}%`);
+          g.select("text.pct").text(pct(cell.changePercent));
+        });
+    };
+
+    /** Full layout: only when the snapshot (tile sizes) or the panel size changes. */
     const render = () => {
-      const width = el.clientWidth;
-      const height = el.clientHeight;
+      const width = Math.floor(el.clientWidth);
+      const height = Math.floor(el.clientHeight);
       if (width === 0 || height === 0) return;
+      const layoutKey = `${snapshot!.market}:${snapshot!.takenAt}:${cells.length}:${width}x${height}`;
+      if (el.dataset.layout === layoutKey && el.querySelector("svg")) return paint();
       el.innerHTML = "";
+      el.dataset.layout = layoutKey;
 
       type Node = { name: string; children?: Node[]; data?: Cell };
       const root = d3
@@ -72,16 +99,17 @@ export default function HeatmapWidget() {
         .sum((d) => (d.data ? caps.get(d.data.symbol) ?? 0 : 0))
         .sort((a, b) => (b.value ?? 0) - (a.value ?? 0));
 
-      d3.treemap<Node>().size([width, height]).paddingInner(1).paddingTop(12)(root);
+      // round(true) snaps every tile to whole pixels. Unrounded, all edges sat on
+      // fractional coordinates and were anti-aliased: the map looked blurry.
+      d3.treemap<Node>().size([width, height]).paddingInner(1).paddingTop(12).round(true)(root);
 
-      const color = (chg: number) => {
-        const clamped = Math.max(-3, Math.min(3, chg));
-        return clamped >= 0
-          ? d3.interpolateRgb("#1a1a1a", "#00c853")(clamped / 3)
-          : d3.interpolateRgb("#1a1a1a", "#ff3d3d")(-clamped / 3);
-      };
-
-      const svg = d3.select(el).append("svg").attr("width", width).attr("height", height);
+      const svg = d3
+        .select(el)
+        .append("svg")
+        .attr("width", width)
+        .attr("height", height)
+        .attr("shape-rendering", "crispEdges")
+        .style("display", "block");
 
       // Clip each sector label to its own column so long names never bleed
       // into the neighboring sector (the visible cause of overlapping text).
@@ -116,6 +144,7 @@ export default function HeatmapWidget() {
         .data(root.leaves())
         .join("g")
         .attr("class", "leaf")
+        .attr("data-symbol", (d: any) => d.data.data.symbol)
         .attr("transform", (d: any) => `translate(${d.x0},${d.y0})`)
         .style("cursor", "pointer")
         .on("click", (_e, d: any) => setActiveSymbol(d.data.data.symbol));
@@ -124,9 +153,7 @@ export default function HeatmapWidget() {
         .append("rect")
         .attr("width", (d: any) => Math.max(0, d.x1 - d.x0))
         .attr("height", (d: any) => Math.max(0, d.y1 - d.y0))
-        .attr("fill", (d: any) => color(d.data.data.changePercent))
-        .append("title")
-        .text((d: any) => `${d.data.data.symbol} ${d.data.data.name ?? ""}: ${d.data.data.changePercent?.toFixed(2)}%`);
+        .append("title");
 
       leaf
         .filter((d: any) => d.x1 - d.x0 > 32 && d.y1 - d.y0 > 18)
@@ -141,11 +168,13 @@ export default function HeatmapWidget() {
       leaf
         .filter((d: any) => d.x1 - d.x0 > 40 && d.y1 - d.y0 > 30)
         .append("text")
+        .attr("class", "pct")
         .attr("x", 3)
         .attr("y", 22)
         .attr("fill", "#ddd")
-        .attr("font-size", 8)
-        .text((d: any) => `${d.data.data.changePercent >= 0 ? "+" : ""}${d.data.data.changePercent.toFixed(2)}%`);
+        .attr("font-size", 8);
+
+      paint(); // fills, tooltips and % labels come from one place
     };
 
     render();
