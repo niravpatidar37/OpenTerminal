@@ -20,6 +20,8 @@ const ITEMS: Array<{ type: WidgetType; label: string; key: string }> = [
   { type: "recap", label: "MARKET RECAP", key: "" },
   { type: "alerts", label: "ALERTS", key: "" },
   { type: "sectors", label: "SECTOR RS", key: "" },
+  { type: "paper", label: "PAPER TRADING", key: "" },
+  { type: "replay", label: "TRADE THE PAST", key: "" },
 ];
 
 export default function Sidebar() {
