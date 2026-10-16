@@ -14,6 +14,7 @@ import {
 } from "lightweight-charts";
 import { apiGet, fmt, fmtBig, type Candle } from "../../lib/api";
 import { sma, ema, vwap, rsi, macd, bollinger, type Point } from "../../lib/indicators";
+import Explain from "../Explain";
 import { useWidgetSymbol, type WidgetInstance } from "../../store/terminal";
 
 const RANGES = ["1D", "5D", "1M", "6M", "YTD", "1Y", "5Y", "MAX"] as const;
@@ -249,7 +250,7 @@ export default function ChartWidget({ widget }: { widget: WidgetInstance }) {
         <span className="w-2" />
         {INDICATORS.map((ind) => (
           <button key={ind} className={`term-btn ${active.has(ind) ? "active" : ""}`} onClick={() => toggleIndicator(ind)}>
-            {ind}
+            <Explain nested>{ind}</Explain>
           </button>
         ))}
       </div>

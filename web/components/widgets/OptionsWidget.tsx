@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { apiGet, fmt, fmtBig } from "../../lib/api";
 import { useWidgetSymbol, type WidgetInstance } from "../../store/terminal";
+import Explain from "../Explain";
 
 type OptionRow = {
   strike: number | null; lastPrice: number | null; bid: number | null; ask: number | null;
@@ -71,7 +72,7 @@ export default function OptionsWidget({ widget }: { widget: WidgetInstance }) {
       <div className="flex gap-2 items-center p-1">
         <span className="dim">Underlying</span>
         <span className="amber font-bold">{fmt(data.underlyingPrice)}</span>
-        <span className="dim ml-2">Expiry</span>
+        <Explain className="dim ml-2">Expiry</Explain>
         <select
           value={expiry ?? data.selectedDate ?? ""}
           onChange={(e) => setExpiry(e.target.value)}
@@ -91,14 +92,14 @@ export default function OptionsWidget({ widget }: { widget: WidgetInstance }) {
       <table className="data-table">
         <thead>
           <tr>
-            <th colSpan={5} className="!text-center up">CALLS</th>
-            <th className="!text-center">STRIKE</th>
-            <th colSpan={5} className="!text-center down">PUTS</th>
+            <th colSpan={5} className="!text-center up"><Explain term="call">CALLS</Explain></th>
+            <th className="!text-center"><Explain term="strike">STRIKE</Explain></th>
+            <th colSpan={5} className="!text-center down"><Explain term="put">PUTS</Explain></th>
           </tr>
           <tr>
-            {(view === "market" ? MARKET_COLS : GREEK_COLS).map((c) => <th key={`c-${c}`}>{c}</th>)}
+            {(view === "market" ? MARKET_COLS : GREEK_COLS).map((c) => <th key={`c-${c}`}><Explain>{c}</Explain></th>)}
             <th></th>
-            {(view === "market" ? MARKET_COLS : GREEK_COLS).map((c) => <th key={`p-${c}`}>{c}</th>)}
+            {(view === "market" ? MARKET_COLS : GREEK_COLS).map((c) => <th key={`p-${c}`}><Explain>{c}</Explain></th>)}
           </tr>
         </thead>
         <tbody>

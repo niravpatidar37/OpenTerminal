@@ -5,6 +5,7 @@ import { apiGet, fmt, fmtBig, pctClass, type Quote } from "../../lib/api";
 import { pollUnlessLive, useLiveQuotes } from "../../lib/live";
 import { useWidgetSymbol, type WidgetInstance } from "../../store/terminal";
 import Flash from "../Flash";
+import Explain from "../Explain";
 
 type ShortVolume = { date: string; shortVolume: number; shortExemptVolume: number; totalVolume: number; shortVolumePercent: number };
 
@@ -64,7 +65,7 @@ export default function QuoteWidget({ widget }: { widget: WidgetInstance }) {
       <div className="grid grid-cols-2 gap-x-4">
         {rows.map(([label, value]) => (
           <div key={label} className="flex justify-between border-b border-[#161616] py-0.5">
-            <span className="dim">{label}</span>
+            <Explain className="dim">{label}</Explain>
             <span>{value}</span>
           </div>
         ))}

@@ -40,6 +40,8 @@ function marketStateNY(): { label: string; open: boolean } {
 export default function TopBar() {
   const setCommandOpen = useTerminal((s) => s.setCommandOpen);
   const activeSymbol = useTerminal((s) => s.activeSymbol);
+  const learnMode = useTerminal((s) => s.learnMode);
+  const toggleLearnMode = useTerminal((s) => s.toggleLearnMode);
   const { data: status } = useQuery({
     queryKey: ["status"],
     queryFn: () => apiGet<Status>("/api/status"),
@@ -69,6 +71,14 @@ export default function TopBar() {
           ? healthy.map((p) => `${p.name} ${p.lastLatencyMs ?? "—"}ms`).join(" · ")
           : "connecting…"}
       </span>
+      <button
+        className={`term-btn ${learnMode ? "active" : ""}`}
+        onClick={toggleLearnMode}
+        aria-pressed={learnMode}
+        title="Beginner explanations: hover any dotted-underlined label"
+      >
+        LEARN {learnMode ? "ON" : "OFF"}
+      </button>
       <span className={status?.ai ? "up" : "dim"}>AI {status?.ai ? "●" : "○"}</span>
     </header>
   );

@@ -21,7 +21,9 @@ export type WidgetType =
   | "tv"
   | "recap"
   | "alerts"
-  | "sectors";
+  | "sectors"
+  | "paper"
+  | "replay";
 
 export type WidgetInstance = {
   id: string;
@@ -41,6 +43,9 @@ type TerminalState = {
   watchlists: WatchlistGroup[];
   activeWatchlist: number;
   commandOpen: boolean;
+  /** Beginner tooltips on terminal labels (TopBar LEARN toggle). */
+  learnMode: boolean;
+  toggleLearnMode: () => void;
   setActiveSymbol: (s: string) => void;
   setCommandOpen: (open: boolean) => void;
   addWidget: (type: WidgetType, symbol?: string) => void;
@@ -117,6 +122,8 @@ const SIZE_BY_TYPE: Record<WidgetType, { w: number; h: number }> = {
   recap: { w: 5, h: 12 },
   alerts: { w: 6, h: 8 },
   sectors: { w: 7, h: 9 },
+  paper: { w: 8, h: 12 },
+  replay: { w: 8, h: 12 },
 };
 
 export const useTerminal = create<TerminalState>()(
@@ -129,6 +136,8 @@ export const useTerminal = create<TerminalState>()(
       watchlists: [{ name: "Main", symbols: DEFAULT_WATCHLIST }],
       activeWatchlist: 0,
       commandOpen: false,
+      learnMode: true,
+      toggleLearnMode: () => set((st) => ({ learnMode: !st.learnMode })),
       setActiveSymbol: (s) => {
         const sym = normalizeSymbol(s);
         if (sym) set({ activeSymbol: sym });

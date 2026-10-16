@@ -7,6 +7,7 @@ import { pollUnlessLive, useLiveQuotes } from "../../lib/live";
 import { normalizeSymbol, symbolsParam } from "../../lib/symbol";
 import { useTerminal } from "../../store/terminal";
 import Flash from "../Flash";
+import Explain from "../Explain";
 
 /** Named watchlist groups as tabs: click to switch, double-click to rename. */
 function GroupTabs() {
@@ -110,7 +111,7 @@ export default function WatchlistWidget() {
       </form>
       <table className="data-table">
         <thead>
-          <tr><th>Sym</th><th>Last</th><th>Chg%</th><th>Vol</th><th></th></tr>
+          <tr><th>Sym</th><th><Explain term="last">Last</Explain></th><th><Explain>Chg%</Explain></th><th><Explain>Vol</Explain></th><th></th></tr>
         </thead>
         <tbody>
           {watchlist.map((sym) => {

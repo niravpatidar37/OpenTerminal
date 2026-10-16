@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { apiGet, fmt, pctClass } from "../../lib/api";
 import { useTerminal } from "../../store/terminal";
+import Explain from "../Explain";
 
 type Period = "d1" | "w1" | "m1" | "m3";
 type Returns = Record<Period, number | null>;
@@ -38,7 +39,7 @@ export default function SectorStrengthWidget() {
     <div>
       <div className="flex gap-1 p-1 items-center">
         <button className={`term-btn ${mode === "rs" ? "active" : ""}`} onClick={() => setMode("rs")}>
-          VS {data.benchmark.symbol}
+          <Explain nested term="relativeStrength">VS {data.benchmark.symbol}</Explain>
         </button>
         <button className={`term-btn ${mode === "returns" ? "active" : ""}`} onClick={() => setMode("returns")}>
           ABSOLUTE
