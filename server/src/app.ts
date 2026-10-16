@@ -3,6 +3,7 @@ import cors from "cors";
 import { cryptoBoard, getQuotes, macroData, marketRouter } from "./routes/market.js";
 import { createStreamRouter } from "./routes/stream.js";
 import { alertsRouter } from "./alerts.js";
+import { createPaperRouter } from "./paper.js";
 import { portfolioRouter } from "./routes/portfolio.js";
 import { aiRouter } from "./routes/ai.js";
 import { allStats } from "./providers/registry.js";
@@ -55,6 +56,8 @@ export function createApp() {
   app.use("/api/portfolios", requireApiKey, portfolioRouter);
   // Alerts are private like portfolios: same shared-secret gate.
   app.use("/api/alerts", requireApiKey, alertsRouter);
+  // Simulated trading account (learning). Private like portfolios.
+  app.use("/api/paper", requireApiKey, createPaperRouter(getQuotes));
   app.use(
     "/api/ai",
     requireApiKey,
