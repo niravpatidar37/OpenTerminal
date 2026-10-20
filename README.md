@@ -1,6 +1,11 @@
 <div align="center">
 
-# OpenTerminal
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/brand/logo-dark.svg">
+    <img src="docs/brand/logo.svg" alt="OpenTerminal" height="64">
+  </picture>
+</h1>
 
 **A Terminal‑style workspace for the rest of us — built entirely on free, public market data.**
 
