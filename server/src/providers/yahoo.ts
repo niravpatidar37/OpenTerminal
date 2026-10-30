@@ -50,9 +50,22 @@ export type Quote = {
   marketState: string | null;
   time: number | null;
   source: string;
+  /** Pre-market / after-hours trading, kept apart from the regular-session price above. */
+  extended?: ExtendedQuote | null;
 };
 
-export type Candle = { time: number; open: number; high: number; low: number; close: number; volume: number };
+export type ExtendedQuote = {
+  session: "pre" | "post";
+  price: number;
+  /** Versus the reference the provider uses: the latest regular-session close. */
+  change: number | null;
+  changePercent: number | null;
+  /** Wall-clock label such as "7:56 PM ET", or null. */
+  time: string | null;
+};
+
+/** `session` is set only on extended-hours candles (1D with ext=1). */
+export type Candle = { time: number; open: number; high: number; low: number; close: number; volume: number; session?: "pre" | "post" };
 
 // ---- crumb/cookie session (needed for the v7 quote and options endpoints) ----
 
@@ -174,7 +187,26 @@ export async function quotes(symbols: string[]): Promise<Quote[]> {
     marketState: r.marketState ?? null,
     time: n(r.regularMarketTime),
     source: "yahoo",
+    extended: yahooExtended(r),
   }));
+}
+
+const etClock = (unixSec: number | null): string | null =>
+  unixSec === null
+    ? null
+    : new Date(unixSec * 1000).toLocaleTimeString("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit" }) + " ET";
+
+/** Yahoo reports extended hours in separate pre/postMarket* fields; marketState says which applies now. */
+export function yahooExtended(r: any): ExtendedQuote | null {
+  const state = String(r?.marketState ?? "").toUpperCase();
+  const pick = (session: "pre" | "post", key: "preMarket" | "postMarket"): ExtendedQuote | null => {
+    const price = n(r?.[`${key}Price`]);
+    if (price === null || price <= 0) return null;
+    return { session, price, change: n(r[`${key}Change`]), changePercent: n(r[`${key}ChangePercent`]), time: etClock(n(r[`${key}Time`])) };
+  };
+  if (state.startsWith("PRE")) return pick("pre", "preMarket");
+  if (state.startsWith("POST") || state === "CLOSED") return pick("post", "postMarket");
+  return null;
 }
 
 /** Quote fallback that works without crumb, using the chart endpoint's metadata. */

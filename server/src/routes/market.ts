@@ -255,10 +255,13 @@ marketRouter.get("/history/:symbol", async (req, res) => {
   // Allowlisted: every distinct string was a distinct cache key, so arbitrary
   // values bypassed the cache and forced a fresh upstream fan-out each time.
   if (!HISTORY_RANGES.has(rangeKey)) return res.status(400).json({ error: "unsupported range" });
+  // Extended hours (4:00-20:00 ET) only exist for the 1D intraday view. Only the
+  // literal "1" enables it, so the cache key space stays two values per symbol.
+  const ext = rangeKey === "1D" && req.query.ext === "1";
   try {
     // 1D is the live view (the chart polls it every 8s), so it gets a short TTL.
     const ttl = rangeKey === "1D" ? INTRADAY_TTL : HISTORY_TTL;
-    const data = await cached(`history:${symbol}:${rangeKey}`, ttl, () =>
+    const data = await cached(`history:${symbol}:${rangeKey}${ext ? ":ext" : ""}`, ttl, () =>
       binance.CRYPTO_SYMBOLS.has(symbol)
         ? binance.history(symbol, rangeKey)
         : isVix(symbol)
@@ -268,7 +271,7 @@ marketRouter.get("/history/:symbol", async (req, res) => {
             // daily chart answered first, so "1D" showed a few daily bars with
             // no candle for the session in progress.
             ...(rangeKey === "1D"
-              ? ([["nasdaq-intraday", () => nasdaq.intraday(symbol)]] as Array<[string, () => Promise<yahoo.Candle[]>]>)
+              ? ([["nasdaq-intraday", () => nasdaq.intraday(symbol, 5, ext)]] as Array<[string, () => Promise<yahoo.Candle[]>]>)
               : []),
             ["nasdaq", () => nasdaq.history(symbol, rangeKey)],
             ["yahoo", () => yahoo.history(symbol, yahooRange(rangeKey).range, yahooRange(rangeKey).interval)],
