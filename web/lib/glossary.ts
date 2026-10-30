@@ -69,10 +69,30 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
   yieldCurve: { title: "Yield curve", what: "US Treasury interest rates across maturities, from 3 months to 30 years.", why: "It usually slopes upward. When short rates are above long rates ('inverted'), many read it as a recession warning." },
   replay: { title: "Chart replay", what: "Trade a real past chart one candle at a time, without seeing what comes next.", why: "Practises decisions without hindsight: the stock and dates stay hidden until the end." },
   buyHold: { title: "Buy and hold", what: "Buying at the start and doing nothing until the end.", why: "The standard benchmark: active trading only 'worked' if it beat this." },
+
+  // --- extended hours ---
+  preMarket: {
+    title: "Pre-market",
+    what: "Trading before the regular session, from 4:00 to 9:30 New York time. The change shown is measured from the last regular close.",
+    why: "It shows how the stock is reacting to overnight news, such as earnings released before the open.",
+    tip: "Few shares trade then, so prices can jump and the gap between bid and ask is often wide. The regular open can be quite different.",
+  },
+  afterHours: {
+    title: "After hours",
+    what: "Trading after the regular session closes, from 16:00 to 20:00 New York time. The change shown is measured from today's 16:00 close.",
+    why: "Companies often report earnings right after the close, so the first reaction happens here.",
+    tip: "Thin trading means after-hours prices are less reliable than regular-session ones, and many orders don't execute then.",
+  },
+  extendedHours: {
+    title: "Extended hours (EXT)",
+    what: "Adds pre-market (4:00-9:30) and after-hours (16:00-20:00) candles to the 1D chart, drawn faded so they stand apart from the regular session.",
+    why: "News often moves prices outside regular hours, and this shows where the stock traded before the open or after the close.",
+  },
 };
 
 /** UI labels -> glossary keys. Lookups also try the lower-cased label itself. */
 const ALIASES: Record<string, string> = {
+  "pre-market": "preMarket", "after hours": "afterHours", "ext": "extendedHours",
   "prev close": "prevClose", "avg vol 3m": "avgVolume", "short vol %": "shortVolume", "mkt cap": "marketCap",
   "p/e (ttm)": "pe", "p/e": "pe", "eps (ttm)": "eps", "div yield": "dividendYield", "52w high": "week52High",
   "52w low": "week52Low", "shares out": "sharesOut", "chg%": "changePct", "vol": "volume", "oi · iv": "openInterest",
